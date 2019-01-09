@@ -1,11 +1,12 @@
 import os
+import shutil
+import gzip
 import unittest
-from .helpers.ptrack_helpers import ProbackupTest, ProbackupException, archive_script
+from .helpers.ptrack_helpers import ProbackupTest, ProbackupException, GdbException
 from datetime import datetime, timedelta
 import subprocess
 from sys import exit
 from time import sleep
-from shutil import copyfile
 
 
 module_name = 'archive'
@@ -20,7 +21,7 @@ class ArchiveTest(ProbackupTest, unittest.TestCase):
         fname = self.id().split('.')[3]
         backup_dir = os.path.join(self.tmp_path, module_name, fname, 'backup')
         node = self.make_simple_node(
-            base_dir="{0}/{1}/node".format(module_name, fname),
+            base_dir=os.path.join(module_name, fname, 'node'),
             set_replication=True,
             initdb_params=['--data-checksums'],
             pg_options={
@@ -78,7 +79,7 @@ class ArchiveTest(ProbackupTest, unittest.TestCase):
         fname = self.id().split('.')[3]
         backup_dir = os.path.join(self.tmp_path, module_name, fname, 'backup')
         node = self.make_simple_node(
-            base_dir="{0}/{1}/node".format(module_name, fname),
+            base_dir=os.path.join(module_name, fname, 'node'),
             set_replication=True,
             initdb_params=['--data-checksums'],
             pg_options={
@@ -220,11 +221,14 @@ class ArchiveTest(ProbackupTest, unittest.TestCase):
 
     # @unittest.skip("skip")
     def test_pgpro434_3(self):
-        """Check pg_stop_backup_timeout, needed backup_timeout"""
+        """
+        Check pg_stop_backup_timeout, needed backup_timeout
+        Fixed in commit d84d79668b0c139 and assert fixed by ptrack 1.7
+        """
         fname = self.id().split('.')[3]
         backup_dir = os.path.join(self.tmp_path, module_name, fname, 'backup')
         node = self.make_simple_node(
-            base_dir="{0}/{1}/node".format(module_name, fname),
+            base_dir=os.path.join(module_name, fname, 'node'),
             set_replication=True,
             initdb_params=['--data-checksums'],
             pg_options={
@@ -235,37 +239,32 @@ class ArchiveTest(ProbackupTest, unittest.TestCase):
         self.add_instance(backup_dir, 'node', node)
         self.set_archiving(backup_dir, 'node', node)
 
-        archive_script_path = os.path.join(backup_dir, 'archive_script.sh')
-        with open(archive_script_path, 'w+') as f:
-            f.write(
-                archive_script.format(
-                    backup_dir=backup_dir, node_name='node', count_limit=2))
-
-        st = os.stat(archive_script_path)
-        os.chmod(archive_script_path, st.st_mode | 0o111)
-        node.append_conf(
-            'postgresql.auto.conf', "archive_command  = '{0} %p %f'".format(
-                archive_script_path))
         node.slow_start()
-        try:
-            self.backup_node(
+
+        gdb = self.backup_node(
                 backup_dir, 'node', node,
                 options=[
                     "--archive-timeout=60",
-                    "--stream"]
-                    )
-            # we should die here because exception is what we expect to happen
-            self.assertEqual(
-                1, 0,
-                "Expecting Error because pg_stop_backup failed to answer.\n "
-                "Output: {0} \n CMD: {1}".format(
-                    repr(self.output), self.cmd))
-        except ProbackupException as e:
-            self.assertTrue(
-                "ERROR: pg_stop_backup doesn't answer" in e.message and
-                "cancel it" in e.message,
-                '\n Unexpected Error Message: {0}\n CMD: {1}'.format(
-                    repr(e.message), self.cmd))
+                    "--stream",
+                    "--log-level-file=info"],
+                gdb=True)
+
+        gdb.set_breakpoint('pg_stop_backup')
+        gdb.run_until_break()
+
+        node.append_conf(
+            'postgresql.auto.conf', "archive_command = 'exit 1'")
+        node.reload()
+
+        gdb.continue_execution_until_exit()
+
+        log_file = os.path.join(backup_dir, 'log/pg_probackup.log')
+        with open(log_file, 'r') as f:
+            log_content = f.read()
+            self.assertNotIn(
+                "ERROR: pg_stop_backup doesn't answer",
+                log_content,
+                "pg_stop_backup timeouted")
 
         log_file = os.path.join(node.logs_dir, 'postgresql.log')
         with open(log_file, 'r') as f:
@@ -284,7 +283,7 @@ class ArchiveTest(ProbackupTest, unittest.TestCase):
         fname = self.id().split('.')[3]
         backup_dir = os.path.join(self.tmp_path, module_name, fname, 'backup')
         node = self.make_simple_node(
-            base_dir="{0}/{1}/node".format(module_name, fname),
+            base_dir=os.path.join(module_name, fname, 'node'),
             set_replication=True,
             initdb_params=['--data-checksums'],
             pg_options={
@@ -325,7 +324,16 @@ class ArchiveTest(ProbackupTest, unittest.TestCase):
             )
             self.assertFalse('pg_probackup archive-push completed successfully' in log_content)
 
-        os.remove(file)
+        wal_src = os.path.join(
+            node.data_dir, 'pg_wal', '000000010000000000000001')
+
+        if self.archive_compress:
+            with open(wal_src, 'rb') as f_in, gzip.open(
+                    file, 'wb', compresslevel=1) as f_out:
+                shutil.copyfileobj(f_in, f_out)
+        else:
+            shutil.copyfile(wal_src, file)
+
         self.switch_wal_segment(node)
         sleep(5)
 
@@ -344,7 +352,7 @@ class ArchiveTest(ProbackupTest, unittest.TestCase):
         fname = self.id().split('.')[3]
         backup_dir = os.path.join(self.tmp_path, module_name, fname, 'backup')
         node = self.make_simple_node(
-            base_dir="{0}/{1}/node".format(module_name, fname),
+            base_dir=os.path.join(module_name, fname, 'node'),
             set_replication=True,
             initdb_params=['--data-checksums'],
             pg_options={
@@ -400,7 +408,7 @@ class ArchiveTest(ProbackupTest, unittest.TestCase):
         self.del_test_dir(module_name, fname)
 
     # @unittest.expectedFailure
-    @unittest.skip("skip")
+    # @unittest.skip("skip")
     def test_replica_archive(self):
         """
         make node without archiving, take stream backup and
@@ -410,7 +418,7 @@ class ArchiveTest(ProbackupTest, unittest.TestCase):
         fname = self.id().split('.')[3]
         backup_dir = os.path.join(self.tmp_path, module_name, fname, 'backup')
         master = self.make_simple_node(
-            base_dir="{0}/{1}/master".format(module_name, fname),
+            base_dir=os.path.join(module_name, fname, 'master'),
             set_replication=True,
             initdb_params=['--data-checksums'],
             pg_options={
@@ -424,7 +432,7 @@ class ArchiveTest(ProbackupTest, unittest.TestCase):
         master.slow_start()
 
         replica = self.make_simple_node(
-            base_dir="{0}/{1}/replica".format(module_name, fname))
+            base_dir=os.path.join(module_name, fname, 'replica'))
         replica.cleanup()
 
         master.psql(
@@ -473,7 +481,7 @@ class ArchiveTest(ProbackupTest, unittest.TestCase):
 
         # RESTORE FULL BACKUP TAKEN FROM replica
         node = self.make_simple_node(
-            base_dir="{0}/{1}/node".format(module_name, fname))
+            base_dir=os.path.join(module_name, fname, 'node'))
         node.cleanup()
         self.restore_node(backup_dir, 'replica', data_dir=node.data_dir)
         node.append_conf(
@@ -490,7 +498,7 @@ class ArchiveTest(ProbackupTest, unittest.TestCase):
             "postgres",
             "insert into t_heap as select i as id, md5(i::text) as text, "
             "md5(repeat(i::text,10))::tsvector as tsvector "
-            "from generate_series(512,20680) i")
+            "from generate_series(512,80680) i")
 
         before = master.safe_psql("postgres", "SELECT * FROM t_heap")
 
@@ -498,15 +506,13 @@ class ArchiveTest(ProbackupTest, unittest.TestCase):
             "postgres",
             "CHECKPOINT")
 
-#        copyfile(
-#            os.path.join(backup_dir, 'wal/master/000000010000000000000002'),
-#            os.path.join(backup_dir, 'wal/replica/000000010000000000000002'))
+        self.wait_until_replica_catch_with_master(master, replica)
 
         backup_id = self.backup_node(
             backup_dir, 'replica',
             replica, backup_type='page',
             options=[
-                '--archive-timeout=30',
+                '--archive-timeout=60',
                 '--master-db=postgres',
                 '--master-host=localhost',
                 '--master-port={0}'.format(master.port),
@@ -544,14 +550,14 @@ class ArchiveTest(ProbackupTest, unittest.TestCase):
         fname = self.id().split('.')[3]
         backup_dir = os.path.join(self.tmp_path, module_name, fname, 'backup')
         master = self.make_simple_node(
-            base_dir="{0}/{1}/master".format(module_name, fname),
+            base_dir=os.path.join(module_name, fname, 'master'),
             set_replication=True,
             initdb_params=['--data-checksums'],
             pg_options={
                 'archive_timeout': '10s'}
             )
         replica = self.make_simple_node(
-            base_dir="{0}/{1}/replica".format(module_name, fname))
+            base_dir=os.path.join(module_name, fname, 'replica'))
         replica.cleanup()
 
         self.init_pb(backup_dir)
@@ -596,10 +602,9 @@ class ArchiveTest(ProbackupTest, unittest.TestCase):
             "md5(repeat(i::text,10))::tsvector as tsvector "
             "from generate_series(0, 60000) i")
 
-        # TAKE FULL ARCHIVE BACKUP FROM REPLICA
-        copyfile(
-             os.path.join(backup_dir, 'wal/master/000000010000000000000001'),
-             os.path.join(backup_dir, 'wal/replica/000000010000000000000001'))
+        master.psql(
+            "postgres",
+            "CHECKPOINT")
 
         backup_id = self.backup_node(
             backup_dir, 'replica', replica,
@@ -635,7 +640,7 @@ class ArchiveTest(ProbackupTest, unittest.TestCase):
         fname = self.id().split('.')[3]
         backup_dir = os.path.join(self.tmp_path, module_name, fname, 'backup')
         master = self.make_simple_node(
-            base_dir="{0}/{1}/master".format(module_name, fname),
+            base_dir=os.path.join(module_name, fname, 'master'),
             set_replication=True,
             initdb_params=['--data-checksums'],
             pg_options={
@@ -643,7 +648,7 @@ class ArchiveTest(ProbackupTest, unittest.TestCase):
                 'archive_timeout': '10s'}
             )
         replica = self.make_simple_node(
-            base_dir="{0}/{1}/replica".format(module_name, fname))
+            base_dir=os.path.join(module_name, fname, 'replica'))
         replica.cleanup()
 
         self.init_pb(backup_dir)
@@ -718,7 +723,7 @@ class ArchiveTest(ProbackupTest, unittest.TestCase):
         fname = self.id().split('.')[3]
         backup_dir = os.path.join(self.tmp_path, module_name, fname, 'backup')
         node = self.make_simple_node(
-            base_dir="{0}/{1}/node".format(module_name, fname),
+            base_dir=os.path.join(module_name, fname, 'node'),
             set_replication=True,
             initdb_params=['--data-checksums'],
             pg_options={
@@ -727,7 +732,7 @@ class ArchiveTest(ProbackupTest, unittest.TestCase):
             )
         self.init_pb(backup_dir)
         self.add_instance(backup_dir, 'node', node)
-        node.start()
+        node.slow_start()
         if self.get_version(node) < 100000:
             pg_receivexlog_path = self.get_bin_path('pg_receivexlog')
         else:
@@ -792,7 +797,7 @@ class ArchiveTest(ProbackupTest, unittest.TestCase):
         fname = self.id().split('.')[3]
         backup_dir = os.path.join(self.tmp_path, module_name, fname, 'backup')
         node = self.make_simple_node(
-            base_dir="{0}/{1}/node".format(module_name, fname),
+            base_dir=os.path.join(module_name, fname, 'node'),
             set_replication=True,
             initdb_params=['--data-checksums'],
             pg_options={
@@ -801,7 +806,7 @@ class ArchiveTest(ProbackupTest, unittest.TestCase):
             )
         self.init_pb(backup_dir)
         self.add_instance(backup_dir, 'node', node)
-        node.start()
+        node.slow_start()
         if self.get_version(node) < self.version_to_num('10.0'):
             return unittest.skip('You need PostgreSQL 10 for this test')
         else:

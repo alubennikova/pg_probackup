@@ -14,7 +14,7 @@ class SimpleTest(ProbackupTest, unittest.TestCase):
     def test_ptrack_vacuum_full(self):
         fname = self.id().split('.')[3]
         node = self.make_simple_node(
-            base_dir="{0}/{1}/node".format(module_name, fname),
+            base_dir=os.path.join(module_name, fname, 'node'),
             set_replication=True,
             initdb_params=['--data-checksums'],
             pg_options={
@@ -95,13 +95,15 @@ class SimpleTest(ProbackupTest, unittest.TestCase):
     def test_ptrack_vacuum_full_replica(self):
         fname = self.id().split('.')[3]
         master = self.make_simple_node(
-            base_dir="{0}/{1}/master".format(module_name, fname),
+            base_dir=os.path.join(module_name, fname, 'master'),
             set_replication=True,
             initdb_params=['--data-checksums'],
             pg_options={
-                'ptrack_enable': 'on', 'wal_level': 'replica',
-                'max_wal_senders': '2', 'autovacuum': 'off',
-                'checkpoint_timeout': '30s'}
+                'ptrack_enable': 'on',
+                'wal_level': 'replica',
+                'max_wal_senders': '2',
+                'autovacuum': 'off',
+                'archive_timeout': '30s'}
             )
         backup_dir = os.path.join(self.tmp_path, module_name, fname, 'backup')
         self.init_pb(backup_dir)
@@ -110,7 +112,7 @@ class SimpleTest(ProbackupTest, unittest.TestCase):
 
         self.backup_node(backup_dir, 'master', master, options=['--stream'])
         replica = self.make_simple_node(
-            base_dir="{0}/{1}/replica".format(module_name, fname))
+            base_dir=os.path.join(module_name, fname, 'replica'))
         replica.cleanup()
 
         self.restore_node(backup_dir, 'master', replica)
@@ -150,7 +152,8 @@ class SimpleTest(ProbackupTest, unittest.TestCase):
                 '-j10',
                 '--master-host=localhost',
                 '--master-db=postgres',
-                '--master-port={0}'.format(master.port)
+                '--master-port={0}'.format(master.port),
+                '--stream'
                 ]
             )
         # TODO: check that all ptrack are nullified

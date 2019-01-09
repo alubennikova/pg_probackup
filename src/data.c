@@ -29,6 +29,9 @@ typedef union DataPage
 	char		data[BLCKSZ];
 } DataPage;
 
+static bool
+fileEqualCRC(const char *path1, const char *path2, bool path2_is_compressed);
+
 #ifdef HAVE_LIBZ
 /* Implementation of zlib compression method */
 static int32
@@ -95,6 +98,8 @@ do_decompress(void* dst, size_t dst_size, void const* src, size_t src_size,
 	{
 		case NONE_COMPRESS:
 		case NOT_DEFINED_COMPRESS:
+		    if (errormsg)
+				*errormsg = "Invalid compression algorithm";
 			return -1;
 #ifdef HAVE_LIBZ
 		case ZLIB_COMPRESS:
@@ -227,8 +232,8 @@ read_page_from_file(pgFile *file, BlockNumber blknum,
 			return 0;
 		}
 		else
-			elog(WARNING, "File: %s, block %u, expected block size %d,"
-					  "but read %lu, try again",
+			elog(WARNING, "File: %s, block %u, expected block size %u,"
+					  "but read %zu, try again",
 					   file->path, blknum, BLCKSZ, read_len);
 	}
 
@@ -377,7 +382,7 @@ prepare_page(backup_files_arg *arguments,
 		else if (page_size != BLCKSZ)
 		{
 			free(ptrack_page);
-			elog(ERROR, "File: %s, block %u, expected block size %d, but read %lu",
+			elog(ERROR, "File: %s, block %u, expected block size %d, but read %zu",
 					   file->path, absolute_blknum, BLCKSZ, page_size);
 		}
 		else
@@ -484,7 +489,7 @@ compress_and_backup_page(pgFile *file, BlockNumber blknum,
 				  blknum, header.compressed_size, write_buffer_size); */
 
 	/* Update CRC */
-	COMP_TRADITIONAL_CRC32(*crc, write_buffer, write_buffer_size);
+	COMP_FILE_CRC32(true, *crc, write_buffer, write_buffer_size);
 
 	/* write data page */
 	if(fwrite(write_buffer, 1, write_buffer_size, out) != write_buffer_size)
@@ -544,13 +549,13 @@ backup_data_file(backup_files_arg* arguments,
 	/* reset size summary */
 	file->read_size = 0;
 	file->write_size = 0;
-	INIT_TRADITIONAL_CRC32(file->crc);
+	INIT_FILE_CRC32(true, file->crc);
 
 	/* open backup mode file for read */
 	in = fopen(file->path, PG_BINARY_R);
 	if (in == NULL)
 	{
-		FIN_TRADITIONAL_CRC32(file->crc);
+		FIN_FILE_CRC32(true, file->crc);
 
 		/*
 		 * If file is not found, this is not en error.
@@ -569,7 +574,7 @@ backup_data_file(backup_files_arg* arguments,
 	if (file->size % BLCKSZ != 0)
 	{
 		fclose(in);
-		elog(ERROR, "File: %s, invalid file size %lu", file->path, file->size);
+		elog(ERROR, "File: %s, invalid file size %zu", file->path, file->size);
 	}
 
 	/*
@@ -655,7 +660,7 @@ backup_data_file(backup_files_arg* arguments,
 			 to_path, strerror(errno));
 	fclose(in);
 
-	FIN_TRADITIONAL_CRC32(file->crc);
+	FIN_FILE_CRC32(true, file->crc);
 
 	/*
 	 * If we have pagemap then file in the backup can't be a zero size.
@@ -784,7 +789,7 @@ restore_data_file(const char *to_path, pgFile *file, bool allow_truncate,
 		read_len = fread(compressed_page.data, 1,
 			MAXALIGN(header.compressed_size), in);
 		if (read_len != MAXALIGN(header.compressed_size))
-			elog(ERROR, "cannot read block %u of \"%s\" read %lu of %d",
+			elog(ERROR, "cannot read block %u of \"%s\" read %zu of %d",
 				blknum, file->path, read_len, header.compressed_size);
 
 		/*
@@ -824,6 +829,8 @@ restore_data_file(const char *to_path, pgFile *file, bool allow_truncate,
 
 		if (write_header)
 		{
+			/* We uncompressed the page, so its size is BLCKSZ */
+			header.compressed_size = BLCKSZ;
 			if (fwrite(&header, 1, sizeof(header), out) != sizeof(header))
 				elog(ERROR, "cannot write header of block %u of \"%s\": %s",
 					 blknum, file->path, strerror(errno));
@@ -924,7 +931,7 @@ copy_file(const char *from_root, const char *to_root, pgFile *file)
 	struct stat	st;
 	pg_crc32	crc;
 
-	INIT_TRADITIONAL_CRC32(crc);
+	INIT_FILE_CRC32(true, crc);
 
 	/* reset size summary */
 	file->read_size = 0;
@@ -934,7 +941,7 @@ copy_file(const char *from_root, const char *to_root, pgFile *file)
 	in = fopen(file->path, PG_BINARY_R);
 	if (in == NULL)
 	{
-		FIN_TRADITIONAL_CRC32(crc);
+		FIN_FILE_CRC32(true, crc);
 		file->crc = crc;
 
 		/* maybe deleted, it's not error */
@@ -983,7 +990,7 @@ copy_file(const char *from_root, const char *to_root, pgFile *file)
 				 strerror(errno_tmp));
 		}
 		/* update CRC */
-		COMP_TRADITIONAL_CRC32(crc, buf, read_len);
+		COMP_FILE_CRC32(true, crc, buf, read_len);
 
 		file->read_size += read_len;
 	}
@@ -1010,14 +1017,14 @@ copy_file(const char *from_root, const char *to_root, pgFile *file)
 				 strerror(errno_tmp));
 		}
 		/* update CRC */
-		COMP_TRADITIONAL_CRC32(crc, buf, read_len);
+		COMP_FILE_CRC32(true, crc, buf, read_len);
 
 		file->read_size += read_len;
 	}
 
 	file->write_size = (int64) file->read_size;
 	/* finish CRC calculation and store into pgFile */
-	FIN_TRADITIONAL_CRC32(crc);
+	FIN_FILE_CRC32(true, crc);
 	file->crc = crc;
 
 	/* update file permission */
@@ -1092,14 +1099,21 @@ push_wal_file(const char *from_path, const char *to_path, bool is_compress,
 	FILE	   *in = NULL;
 	FILE	   *out=NULL;
 	char		buf[XLOG_BLCKSZ];
-	const char *to_path_p = to_path;
+	const char *to_path_p;
 	char		to_path_temp[MAXPGPATH];
 	int			errno_temp;
 
 #ifdef HAVE_LIBZ
 	char		gz_to_path[MAXPGPATH];
 	gzFile		gz_out = NULL;
+	if (is_compress)
+	{
+		snprintf(gz_to_path, sizeof(gz_to_path), "%s.gz", to_path);
+		to_path_p = gz_to_path;
+	}
+	else
 #endif
+		to_path_p = to_path;
 
 	/* open file for read */
 	in = fopen(from_path, PG_BINARY_R);
@@ -1107,30 +1121,31 @@ push_wal_file(const char *from_path, const char *to_path, bool is_compress,
 		elog(ERROR, "Cannot open source WAL file \"%s\": %s", from_path,
 			 strerror(errno));
 
+	/* Check if possible to skip copying */
+	if (fileExists(to_path_p))
+	{
+		if (fileEqualCRC(from_path, to_path_p, is_compress))
+			return;
+			/* Do not copy and do not rise error. Just quit as normal. */
+		else if (!overwrite)
+			elog(ERROR, "WAL segment \"%s\" already exists.", to_path_p);
+	}
+
 	/* open backup file for write  */
 #ifdef HAVE_LIBZ
 	if (is_compress)
 	{
-		snprintf(gz_to_path, sizeof(gz_to_path), "%s.gz", to_path);
-
-		if (!overwrite && fileExists(gz_to_path))
-			elog(ERROR, "WAL segment \"%s\" already exists.", gz_to_path);
-
 		snprintf(to_path_temp, sizeof(to_path_temp), "%s.partial", gz_to_path);
 
 		gz_out = gzopen(to_path_temp, PG_BINARY_W);
-		if (gzsetparams(gz_out, compress_level, Z_DEFAULT_STRATEGY) != Z_OK)
+		if (gzsetparams(gz_out, instance_config.compress_level, Z_DEFAULT_STRATEGY) != Z_OK)
 			elog(ERROR, "Cannot set compression level %d to file \"%s\": %s",
-				 compress_level, to_path_temp, get_gz_error(gz_out, errno));
-
-		to_path_p = gz_to_path;
+				 instance_config.compress_level, to_path_temp,
+				 get_gz_error(gz_out, errno));
 	}
 	else
 #endif
 	{
-		if (!overwrite && fileExists(to_path))
-			elog(ERROR, "WAL segment \"%s\" already exists.", to_path);
-
 		snprintf(to_path_temp, sizeof(to_path_temp), "%s.partial", to_path);
 
 		out = fopen(to_path_temp, PG_BINARY_W);
@@ -1408,75 +1423,13 @@ get_wal_file(const char *from_path, const char *to_path)
  * but created in process of backup, such as stream XLOG files,
  * PG_TABLESPACE_MAP_FILE and PG_BACKUP_LABEL_FILE.
  */
-bool
+void
 calc_file_checksum(pgFile *file)
 {
-	FILE	   *in;
-	size_t		read_len = 0;
-	int			errno_tmp;
-	char		buf[BLCKSZ];
-	struct stat	st;
-	pg_crc32	crc;
-
 	Assert(S_ISREG(file->mode));
-	INIT_TRADITIONAL_CRC32(crc);
 
-	/* reset size summary */
-	file->read_size = 0;
-	file->write_size = 0;
-
-	/* open backup mode file for read */
-	in = fopen(file->path, PG_BINARY_R);
-	if (in == NULL)
-	{
-		FIN_TRADITIONAL_CRC32(crc);
-		file->crc = crc;
-
-		/* maybe deleted, it's not error */
-		if (errno == ENOENT)
-			return false;
-
-		elog(ERROR, "cannot open source file \"%s\": %s", file->path,
-			 strerror(errno));
-	}
-
-	/* stat source file to change mode of destination file */
-	if (fstat(fileno(in), &st) == -1)
-	{
-		fclose(in);
-		elog(ERROR, "cannot stat \"%s\": %s", file->path,
-			 strerror(errno));
-	}
-
-	for (;;)
-	{
-		read_len = fread(buf, 1, sizeof(buf), in);
-
-		if(read_len == 0)
-			break;
-
-		/* update CRC */
-		COMP_TRADITIONAL_CRC32(crc, buf, read_len);
-
-		file->write_size += read_len;
-		file->read_size += read_len;
-	}
-
-	errno_tmp = errno;
-	if (!feof(in))
-	{
-		fclose(in);
-		elog(ERROR, "cannot read backup mode file \"%s\": %s",
-			 file->path, strerror(errno_tmp));
-	}
-
-	/* finish CRC calculation and store into pgFile */
-	FIN_TRADITIONAL_CRC32(crc);
-	file->crc = crc;
-
-	fclose(in);
-
-	return true;
+	file->crc = pgFileGetCRC(file->path, true, false, &file->read_size);
+	file->write_size = file->read_size;
 }
 
 /*
@@ -1598,14 +1551,14 @@ validate_one_page(Page page, pgFile *file,
 
 /* Valiate pages of datafile in backup one by one */
 bool
-check_file_pages(pgFile *file, XLogRecPtr stop_lsn,
-				 uint32 checksum_version, uint32 backup_version)
+check_file_pages(pgFile *file, XLogRecPtr stop_lsn, uint32 checksum_version,
+				 uint32 backup_version)
 {
 	size_t		read_len = 0;
 	bool		is_valid = true;
 	FILE		*in;
 	pg_crc32	crc;
-	bool use_crc32c = (backup_version <= 20021);
+	bool		use_crc32c = backup_version <= 20021 || backup_version >= 20025;
 
 	elog(VERBOSE, "validate relation blocks for file %s", file->name);
 
@@ -1641,19 +1594,23 @@ check_file_pages(pgFile *file, XLogRecPtr stop_lsn,
 			if (read_len == 0 && feof(in))
 				break;		/* EOF found */
 			else if (read_len != 0 && feof(in))
-				elog(ERROR,
+				elog(WARNING,
 					 "odd size page found at block %u of \"%s\"",
 					 blknum, file->path);
 			else
-				elog(ERROR, "cannot read header of block %u of \"%s\": %s",
+				elog(WARNING, "cannot read header of block %u of \"%s\": %s",
 					 blknum, file->path, strerror(errno_tmp));
+			return false;
 		}
 
 		COMP_FILE_CRC32(use_crc32c, crc, &header, read_len);
 
 		if (header.block < blknum)
-			elog(ERROR, "backup is broken at file->path %s block %u",
+		{
+			elog(WARNING, "backup is broken at file->path %s block %u",
 				 file->path, blknum);
+			return false;
+		}
 
 		blknum = header.block;
 
@@ -1669,8 +1626,11 @@ check_file_pages(pgFile *file, XLogRecPtr stop_lsn,
 		read_len = fread(compressed_page.data, 1,
 			MAXALIGN(header.compressed_size), in);
 		if (read_len != MAXALIGN(header.compressed_size))
-			elog(ERROR, "cannot read block %u of \"%s\" read %lu of %d",
+		{
+			elog(WARNING, "cannot read block %u of \"%s\" read %zu of %d",
 				blknum, file->path, read_len, header.compressed_size);
+			return false;
+		}
 
 		COMP_FILE_CRC32(use_crc32c, crc, compressed_page.data, read_len);
 
@@ -1697,11 +1657,13 @@ check_file_pages(pgFile *file, XLogRecPtr stop_lsn,
 					is_valid = false;
 					continue;
 				}
-				elog(ERROR, "page of file \"%s\" uncompressed to %d bytes. != BLCKSZ",
+				elog(WARNING, "page of file \"%s\" uncompressed to %d bytes. != BLCKSZ",
 					 file->path, uncompressed_size);
+				return false;
 			}
+
 			if (validate_one_page(page.data, file, blknum,
-				stop_lsn, checksum_version) == PAGE_IS_FOUND_AND_NOT_VALID)
+								  stop_lsn, checksum_version) == PAGE_IS_FOUND_AND_NOT_VALID)
 				is_valid = false;
 		}
 		else
@@ -1723,4 +1685,57 @@ check_file_pages(pgFile *file, XLogRecPtr stop_lsn,
 	}
 
 	return is_valid;
+}
+
+static bool
+fileEqualCRC(const char *path1, const char *path2, bool path2_is_compressed)
+{
+	pg_crc32	crc1;
+	pg_crc32	crc2;
+
+	/* Get checksum of backup file */
+#ifdef HAVE_LIBZ
+	if (path2_is_compressed)
+	{
+		char 		buf [1024];
+		gzFile		gz_in = NULL;
+
+		INIT_FILE_CRC32(true, crc2);
+		gz_in = gzopen(path2, PG_BINARY_R);
+		if (gz_in == NULL)
+			/* File cannot be read */
+			elog(ERROR,
+					 "Cannot compare WAL file \"%s\" with compressed \"%s\"",
+					 path1, path2);
+
+		for (;;)
+		{
+			size_t read_len = 0;
+			read_len = gzread(gz_in, buf, sizeof(buf));
+			if (read_len != sizeof(buf) && !gzeof(gz_in))
+				/* An error occurred while reading the file */
+				elog(ERROR,
+					 "Cannot compare WAL file \"%s\" with compressed \"%s\"",
+					 path1, path2);
+
+			COMP_FILE_CRC32(true, crc2, buf, read_len);
+			if (gzeof(gz_in) || read_len == 0)
+				break;
+		}
+		FIN_FILE_CRC32(true, crc2);
+
+		if (gzclose(gz_in) != 0)
+			elog(ERROR, "Cannot close compressed WAL file \"%s\": %s",
+				 path2, get_gz_error(gz_in, errno));
+	}
+	else
+#endif
+	{
+		crc2 = pgFileGetCRC(path2, true, true, NULL);
+	}
+
+	/* Get checksum of original file */
+	crc1 = pgFileGetCRC(path1, true, true, NULL);
+
+	return EQ_CRC32C(crc1, crc2);
 }
