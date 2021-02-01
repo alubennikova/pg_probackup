@@ -9,11 +9,13 @@
 
 #include "pg_probackup.h"
 
+#include "utils/thread.h"
+
 static void *send_files_to_s3(void *arg);
 
 /* Sanity checks for backup to s3 */
 static void
-init_s3(S3Params s3_params)
+init_s3(S3Params *s3_params)
 {
 	if (s3_params->s3_access_key_id == NULL)
 		elog(ERROR, "required S3 parameter not specified: s3_access_key_id");
@@ -21,7 +23,7 @@ init_s3(S3Params s3_params)
 		elog(ERROR, "required S3 parameter not specified: s3_secret_access_key");
 	if (s3_params->s3_hostname == NULL)
 		elog(ERROR, "required S3 parameter not specified: s3_hostname");
-	if (s3_params->s3_bucketname == NULL)
+	if (s3_params->s3_bucket == NULL)
 		elog(ERROR, "required S3 parameter not specified: s3_bucket");
 
 
@@ -33,15 +35,15 @@ init_s3(S3Params s3_params)
     pgut_atexit_push(s3_deinitialize, NULL);
 
     if (!s3_test_bucket(s3_params))
-    elog(ERROR, "s3_bucket %s test is failed", s3_params->s3_bucketname);
+    elog(ERROR, "s3_bucket %s test is failed", s3_params->s3_bucket);
 }
 
 typedef struct send_to_s3_arg
 {
 	parray	   *files;
     char *base_path;
-    S3Params s3_params;
-};
+    S3Params *s3_params;
+} send_to_s3_arg;
 
 
 void
@@ -51,6 +53,7 @@ do_detach(time_t target_backup_id, S3Params *s3_params)
 	parray 		*backup_list = NULL;
 	pthread_t  *threads;
 	send_to_s3_arg *threads_args;
+    int i;
 
     if (instance_name == NULL)
 		elog(ERROR, "required parameter not specified: --instance");
@@ -98,8 +101,6 @@ do_detach(time_t target_backup_id, S3Params *s3_params)
 	for (i = 0; i < num_threads; i++)
 	{
 		pthread_join(threads[i], NULL);
-		if (threads_args[i].ret == 1)
-			restore_isok = false;
 	}
 }
 
