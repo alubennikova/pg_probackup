@@ -317,10 +317,6 @@ print_backup_json_object(PQExpBuffer buf, pgBackup *backup)
 
 	json_add(buf, JT_BEGIN_OBJECT, &json_level);
 
-	json_add_value(buf, "storage",
-				   deparse_storage_type(backup->storage), json_level,
-					true);
-
 	json_add_value(buf, "id", base36enc(backup->start_time), json_level,
 					true);
 

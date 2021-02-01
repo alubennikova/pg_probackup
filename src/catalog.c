@@ -2061,7 +2061,6 @@ pgBackupWriteControl(FILE *out, pgBackup *backup, bool utc)
 	char		timestamp[100];
 
 	fio_fprintf(out, "#Configuration\n");
-	fio_fprintf(out, "storage = %s\n", deparse_storage_type(backup->storage));
 	fio_fprintf(out, "backup-mode = %s\n", pgBackupGetBackupMode(backup, false));
 	fio_fprintf(out, "stream = %s\n", backup->stream ? "true" : "false");
 	fio_fprintf(out, "compress-alg = %s\n",

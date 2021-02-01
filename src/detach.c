@@ -129,6 +129,7 @@ send_files_to_s3(void *arg)
             join_path_components(file_fullpath, arguments->base_path, file->rel_path);
 
         // send file
+        elog(INFO, "send file %s rel_path %s", file_fullpath, file->rel_path);
         s3_put_object(arguments->s3_params, file, file_fullpath);
     }
 

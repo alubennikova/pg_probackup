@@ -150,8 +150,9 @@ s3_put_object(S3Params *s3_params, pgFile *file, char *file_fullpath)
 			/* Stat the file to get its length */
 			if (stat(file_fullpath, &statbuf) == -1) 
 			{
-				elog(ERROR, "ERROR: Failed to stat file %s: ",
+				elog(WARNING, "ERROR: Failed to stat file %s: ",
 						file_fullpath);
+				return;
 			}
 			file->size = statbuf.st_size;
 		}
