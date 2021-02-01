@@ -923,7 +923,7 @@ extern bool validate_tablespace_map(pgBackup *backup);
 
 
 /* in detach.c */
-void do_detach(time_t backup_id, S3Params s3_params);
+void do_detach(time_t target_backup_id, S3Params s3_params);
 
 /* return codes for validate_one_page */
 /* TODO: use enum */

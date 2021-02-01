@@ -105,11 +105,10 @@ typedef struct put_object_callback_data
 
 
 void
-s3_put_object(S3Params S3Params, pgFile *file)
+s3_put_object(S3Params S3Params, pgFile *file, char *file_fullpath)
 {
 	S3NameValue metaProperties[S3_MAX_METADATA_COUNT];
 	put_object_callback_data data;
-	char path[MAXPGPATH] = "/tmp/file";
 
 	S3BucketContext bucketContext =
 	{
@@ -149,18 +148,18 @@ s3_put_object(S3Params S3Params, pgFile *file)
 		{
 			struct stat statbuf;
 			/* Stat the file to get its length */
-			if (stat(path, &statbuf) == -1) 
+			if (stat(file_fullpath, &statbuf) == -1) 
 			{
 				elog(ERROR, "ERROR: Failed to stat file %s: ",
-						path);
+						file_fullpath);
 			}
 			file->size = statbuf.st_size;
 		}
 		/* Open the file */
-		if (!(data.infile = fopen(path, "r")))
+		if (!(data.infile = fopen(file_fullpath, "r")))
 		{
 			elog(ERROR, "ERROR: Failed to open input file %s: ",
-						path);
+						file_fullpath);
 		}
 	}
 
