@@ -37,7 +37,7 @@ static S3Status getObjectDataCallback(int bufferSize, const char *buffer,
 /* ------ Wrappers on low-level s3 funcitons ----- */
 
 void
-s3_initialize(S3Params s3_params)
+s3_initialize(S3Params *s3_params)
 {
 	S3Status status;
 
@@ -56,7 +56,7 @@ s3_deinitialize(bool fatal, void *userdata)
 
 // create bucket
 int
-s3_test_bucket(S3Params s3_params)
+s3_test_bucket(S3Params *s3_params)
 {
 	S3ResponseHandler responseHandler =
 	{
@@ -105,7 +105,7 @@ typedef struct put_object_callback_data
 
 
 void
-s3_put_object(S3Params S3Params, pgFile *file, char *file_fullpath)
+s3_put_object(S3Params *s3_params, pgFile *file, char *file_fullpath)
 {
 	S3NameValue metaProperties[S3_MAX_METADATA_COUNT];
 	put_object_callback_data data;
@@ -200,8 +200,15 @@ s3_put_object(S3Params S3Params, pgFile *file, char *file_fullpath)
 
 // get object
 
+
+bool
+s3_get_object(S3Params *s3_params, pgFile *file)
+{
+	return false;
+}
+
 // bool
-// s3_get_object(S3Params S3Params, pgFile *file)
+// s3_get_object(S3Params *s3_params, pgFile *file)
 // {
 //     FILE *outfile = 0;
 

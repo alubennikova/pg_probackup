@@ -706,11 +706,11 @@ main(int argc, char *argv[])
 
 
 	s3_params = pgut_new(S3Params);
-	s3_params->s3_access_key_id; = s3_access_key_id;
-	s3_params->s3_secret_access_key; = s3_secret_access_key;
-	s3_params->s3_hostname; = s3_hostname;
-	s3_params->s3_bucket; = s3_bucket;
-	s3_params->s3_force_path_style; = s3_force_path_style;
+	s3_params->s3_access_key_id = s3_access_key_id;
+	s3_params->s3_secret_access_key = s3_secret_access_key;
+	s3_params->s3_hostname = s3_hostname;
+	s3_params->s3_bucket = s3_bucket;
+	s3_params->s3_force_path_style = s3_force_path_style;
 
 
 	/*

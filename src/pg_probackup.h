@@ -196,7 +196,7 @@ typedef enum StorageType
 	S3_STORAGE
 } StorageType;
 
-S3Params
+typedef struct S3Params
 {
 	const char *s3_access_key_id;
 	const char *s3_secret_access_key;
@@ -923,7 +923,7 @@ extern bool validate_tablespace_map(pgBackup *backup);
 
 
 /* in detach.c */
-void do_detach(time_t target_backup_id, S3Params s3_params);
+void do_detach(time_t target_backup_id, S3Params *s3_params);
 
 /* return codes for validate_one_page */
 /* TODO: use enum */
@@ -1001,6 +1001,10 @@ extern void wait_ssh(void);
 
 extern CompressAlg parse_compress_alg(const char *arg);
 extern const char* deparse_compress_alg(int alg);
+
+
+extern StorageType parse_storage_type(const char *arg);
+extern const char* deparse_storage_type(int arg);
 
 /* in dir.c */
 extern void dir_list_file(parray *files, const char *root, bool exclude,
@@ -1263,10 +1267,10 @@ extern int wait_WAL_streaming_end(parray *backup_files_list);
 
 
 /* in utils/s3.c */
-extern void s3_initialize(S3Params s3_params);
+extern void s3_initialize(S3Params *s3_params);
 extern void s3_deinitialize(bool fatal, void *userdata);
-extern int s3_test_bucket(S3Params s3_params);
-extern void s3_put_object(S3Params s3_params, pgFile *file);
-extern bool s3_get_object(S3Params s3_params, pgFile *file);
+extern int s3_test_bucket(S3Params *s3_params);
+extern void s3_put_object(S3Params *s3_params, pgFile *file, char *full_filename);
+extern bool s3_get_object(S3Params *s3_params, pgFile *file);
 
 #endif /* PG_PROBACKUP_H */

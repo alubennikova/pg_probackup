@@ -45,7 +45,7 @@ typedef struct send_to_s3_arg
 
 
 void
-do_detach(time_t target_backup_id, S3Params s3_params)
+do_detach(time_t target_backup_id, S3Params *s3_params)
 {
     pgBackup	*target_backup = NULL;
 	parray 		*backup_list = NULL;
