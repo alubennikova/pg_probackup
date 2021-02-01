@@ -1,10 +1,4 @@
---storage=s3
---s3_access_key_id="4ZA1UG3A16JSUGRWMXQZ"
---s3_secret_access_key="V2Wt4jxIWOHBDpWKnnSFlIuJt+kzlfHK+nYZ39ml"
---s3_hostname="127.0.0.1:9000"
---s3_bucket="demo-bucket"
---s3_force_path_style
-
+pg_probackup detach -B /home/anastasia/postgrespro_workdir/backup_dir --instance new --backup-id QNV3LG --storage=s3 --s3-access-key-id="minioadmin" --s3-secret-access-key="minioadmin" --s3-hostname="192.168.1.70:9000" --s3-bucket="newbucket" --s3-force-path-style
 
 Plan:
 

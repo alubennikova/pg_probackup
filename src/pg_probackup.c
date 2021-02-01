@@ -629,6 +629,7 @@ main(int argc, char *argv[])
 	{
 		if (backup_subcmd != RESTORE_CMD &&
 			backup_subcmd != VALIDATE_CMD &&
+			backup_subcmd != DETACH_CMD &&
 			backup_subcmd != DELETE_CMD &&
 			backup_subcmd != MERGE_CMD &&
 			backup_subcmd != SET_BACKUP_CMD &&
