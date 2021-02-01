@@ -2061,6 +2061,7 @@ pgBackupWriteControl(FILE *out, pgBackup *backup, bool utc)
 	char		timestamp[100];
 
 	fio_fprintf(out, "#Configuration\n");
+	fio_fprintf(out, "storage = %s\n", deparse_storage_type(backup->storage, false));
 	fio_fprintf(out, "backup-mode = %s\n", pgBackupGetBackupMode(backup, false));
 	fio_fprintf(out, "stream = %s\n", backup->stream ? "true" : "false");
 	fio_fprintf(out, "compress-alg = %s\n",
@@ -2606,6 +2607,43 @@ deparse_compress_alg(int alg)
 	return NULL;
 }
 
+StorageType
+parse_storage_type(const char *arg)
+{
+	size_t		len;
+
+	/* Skip all spaces detected */
+	while (isspace((unsigned char)*arg))
+		arg++;
+	len = strlen(arg);
+
+	if (len == 0)
+		elog(ERROR, "storage type is empty");
+
+	if (pg_strncasecmp("s3", arg, len) == 0)
+		return S3_STORAGE;
+	else if (pg_strncasecmp("local", arg, len) == 0)
+		return LOCAL_STORAGE;
+	else
+		elog(ERROR, "invalid compress algorithm value \"%s\"", arg);
+
+	return NOT_DEFINED_COMPRESS;
+}
+
+const char*
+deparse_storage_type(int arg)
+{
+	switch (arg)
+	{
+		case S3_STORAGE:
+			return "S3";
+		case LOCAL_STORAGE:
+			return "local";
+	}
+
+	return NULL;
+}
+
 /*
  * Fill PGNodeInfo struct with default values.
  */
@@ -2653,6 +2691,8 @@ pgBackupInit(pgBackup *backup)
 
 	backup->compress_alg = COMPRESS_ALG_DEFAULT;
 	backup->compress_level = COMPRESS_LEVEL_DEFAULT;
+
+	backup->storage = LOCAL_STORAGE;
 
 	backup->block_size = BLCKSZ;
 	backup->wal_block_size = XLOG_BLCKSZ;

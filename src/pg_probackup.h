@@ -190,6 +190,21 @@ typedef enum CompressAlg
 	ZLIB_COMPRESS,
 } CompressAlg;
 
+typedef enum StorageType
+{
+	LOCAL_STORAGE = 0,
+	S3_STORAGE
+} StorageType;
+
+S3Params
+{
+	const char *s3_access_key_id;
+	const char *s3_secret_access_key;
+	const char *s3_hostname;
+	const char *s3_bucket;
+	bool s3_force_path_style;
+} S3Params;
+
 typedef enum ForkName
 {
 	vm,
@@ -474,6 +489,8 @@ struct pgBackup
 	CompressAlg		compress_alg;
 	int				compress_level;
 
+	StorageType 	storage;
+
 	/* Fields needed for compatibility check */
 	uint32			block_size;
 	uint32			wal_block_size;
@@ -504,6 +521,7 @@ struct pgBackup
 
 	/* map used for access to page headers */
 	HeaderMap       hdr_map;
+
 };
 
 /* Recovery target for restore and validate subcommands */
@@ -902,6 +920,10 @@ extern int validate_one_page(Page page, BlockNumber absolute_blkno,
 							 XLogRecPtr stop_lsn, PageState *page_st,
 							 uint32 checksum_version);
 extern bool validate_tablespace_map(pgBackup *backup);
+
+
+/* in detach.c */
+void do_detach(time_t backup_id, S3Params s3_params);
 
 /* return codes for validate_one_page */
 /* TODO: use enum */

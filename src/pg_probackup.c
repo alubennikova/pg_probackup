@@ -79,6 +79,13 @@ static char *primary_conninfo = NULL;
 static pgRecoveryTarget *recovery_target_options = NULL;
 static pgRestoreParams *restore_params = NULL;
 
+static S3Params *s3_params = NULL;
+static char *s3_access_key_id;
+static char *s3_secret_access_key;
+static char *s3_hostname;
+static char *s3_bucket;
+static bool s3_force_path_style;
+
 time_t current_time = 0;
 static bool restore_as_replica = false;
 bool no_validate = false;
@@ -137,6 +144,7 @@ static bool help_opt = false;
 static void opt_incr_restore_mode(ConfigOption *opt, const char *arg);
 static void opt_backup_mode(ConfigOption *opt, const char *arg);
 static void opt_show_format(ConfigOption *opt, const char *arg);
+static void opt_storage_type(ConfigOption *opt, const char *arg);
 
 static void compress_init(ProbackupSubcmd const subcmd);
 
@@ -224,6 +232,22 @@ static ConfigOption cmd_options[] =
 	{ 'I', 170, "ttl", &ttl, SOURCE_CMD_STRICT, SOURCE_DEFAULT, 0, OPTION_UNIT_S, option_get_value},
 	{ 's', 171, "expire-time",		&expire_time_string,	SOURCE_CMD_STRICT },
 
+	/* S3 options
+	* 
+	--storage=s3
+	--s3_access_key_id="4ZA1UG3A16JSUGRWMXQZ"
+	--s3_secret_access_key="V2Wt4jxIWOHBDpWKnnSFlIuJt+kzlfHK+nYZ39ml"
+	--s3_hostname="127.0.0.1:9000"
+	--s3_bucket="demo-bucket"
+	--s3_force_path_style */
+	{ 'f', 249, "storage",				opt_storage_type,		SOURCE_CMD_STRICT },
+	{ 's', 250, "s3-access-key-id",		&s3_access_key_id,	SOURCE_CMD_STRICT },
+	{ 's', 251, "s3-secret-access-key",	&s3_secret_access_key,	SOURCE_CMD_STRICT },
+	{ 's', 252, "s3-hostname",			&s3_hostname,			SOURCE_CMD_STRICT },
+	{ 's', 253, "s3-bucket",			&s3_bucket,				SOURCE_CMD_STRICT },
+	{ 'b', 254, "s3-force-path-style",	&s3_force_path_style,	SOURCE_CMD_STRICT },
+
+	
 	/* options for backward compatibility
 	 * TODO: remove in 3.0.0
 	 */
@@ -680,6 +704,15 @@ main(int argc, char *argv[])
 		}
 	}
 
+
+	s3_params = pgut_new(S3Params);
+	s3_params->s3_access_key_id; = s3_access_key_id;
+	s3_params->s3_secret_access_key; = s3_secret_access_key;
+	s3_params->s3_hostname; = s3_hostname;
+	s3_params->s3_bucket; = s3_bucket;
+	s3_params->s3_force_path_style; = s3_force_path_style;
+
+
 	/*
 	 * Parse set-backup options into set_backup_params structure.
 	 */
@@ -820,6 +853,8 @@ main(int argc, char *argv[])
 		case VERSION_CMD:
 			/* Silence compiler warnings, these already handled earlier */
 			break;
+		case DETACH_CMD:
+			do_detach(current.backup_id, s3_params);
 	}
 
 	return 0;
@@ -949,4 +984,10 @@ opt_datname_include_list(ConfigOption *opt, const char *arg)
 	strcpy(dbname, arg);
 
 	parray_append(datname_include_list, dbname);
+}
+
+static void
+opt_storage_type(ConfigOption *opt, const char *arg)
+{
+	current.storage = parse_storage_type(arg);
 }

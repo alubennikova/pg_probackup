@@ -38,7 +38,8 @@ typedef enum ProbackupSubcmd
 	SSH_CMD,
 	AGENT_CMD,
 	HELP_CMD,
-	VERSION_CMD
+	VERSION_CMD,
+	DETACH_CMD
 } ProbackupSubcmd;
 
 typedef enum OptionSource

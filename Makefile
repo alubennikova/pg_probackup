@@ -2,12 +2,13 @@ PROGRAM = pg_probackup
 
 # utils
 OBJS = src/utils/configuration.o src/utils/json.o src/utils/logger.o \
-	src/utils/parray.o src/utils/pgut.o src/utils/thread.o src/utils/remote.o src/utils/file.o
+	src/utils/parray.o src/utils/pgut.o src/utils/thread.o src/utils/remote.o src/utils/file.o \
+	src/utils/s3.o
 
 OBJS += src/archive.o src/backup.o src/catalog.o src/checkdb.o src/configure.o src/data.o \
 	src/delete.o src/dir.o src/fetch.o src/help.o src/init.o src/merge.o \
 	src/parsexlog.o src/ptrack.o src/pg_probackup.o src/restore.o src/show.o src/stream.o \
-	src/util.o src/validate.o src/datapagemap.o
+	src/util.o src/validate.o src/datapagemap.o src/detach.c
 
 # borrowed files
 OBJS += src/pg_crc.o src/receivelog.o src/streamutil.o \
@@ -49,6 +50,7 @@ endif
 PG_CPPFLAGS = -I$(libpq_srcdir) ${PTHREAD_CFLAGS} -Isrc -I$(srchome)/$(subdir)/src
 override CPPFLAGS := -DFRONTEND $(CPPFLAGS) $(PG_CPPFLAGS)
 PG_LIBS_INTERNAL = $(libpq_pgport) ${PTHREAD_CFLAGS}
+PG_LIBS = -ls3
 
 src/utils/configuration.o: src/datapagemap.h
 src/archive.o: src/instr_time.h
