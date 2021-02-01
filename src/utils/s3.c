@@ -18,7 +18,7 @@ static char errorDetailsG[4096] = { 0 };
 
 static S3Protocol protocolG = S3ProtocolHTTPS;
 
-/* Number of retries. TODO define it in s3Config ?*/
+/* Number of retries. TODO define it in S3Params ?*/
 static int retriesG = 5;
 
 static int should_retry(void);
@@ -37,11 +37,11 @@ static S3Status getObjectDataCallback(int bufferSize, const char *buffer,
 /* ------ Wrappers on low-level s3 funcitons ----- */
 
 void
-s3_initialize(s3Config s3config)
+s3_initialize(S3Params s3_params)
 {
 	S3Status status;
 
-	if ((status = S3_initialize("s3", S3_INIT_ALL, s3config.s3_hostname))
+	if ((status = S3_initialize("s3", S3_INIT_ALL, s3_params->s3_hostname))
         != S3StatusOK)
 		elog(ERROR, "Failed to initialize libs3: %s",
 			 S3_get_status_name(status));
@@ -56,7 +56,7 @@ s3_deinitialize(bool fatal, void *userdata)
 
 // create bucket
 int
-s3_test_bucket(s3Config s3config)
+s3_test_bucket(S3Params s3_params)
 {
 	S3ResponseHandler responseHandler =
 	{
@@ -68,19 +68,19 @@ s3_test_bucket(s3Config s3config)
 
 	elog(INFO, "s3_test_bucket: begin:\n s3_access_key_id %s\n"
 			   "s3_secret_access_key %s\ns3_hostname %s\n bucket %s",
-				s3config.s3_access_key_id, s3config.s3_secret_access_key,
-				s3config.s3_hostname, s3config.s3_bucketname);
+				s3_params->s3_access_key_id, s3_params->s3_secret_access_key,
+				s3_params->s3_hostname, s3_params->s3_bucket);
 
 	do {
 		S3_test_bucket(protocolG,
-					   s3config.s3_force_path_style?S3UriStylePath:S3UriStyleVirtualHost,
-					   s3config.s3_access_key_id,
-					   s3config.s3_secret_access_key,
-					   NULL, s3config.s3_bucketname,
+					   s3_params->s3_force_path_style?S3UriStylePath:S3UriStyleVirtualHost,
+					   s3_params->s3_access_key_id,
+					   s3_params->s3_secret_access_key,
+					   NULL, s3_params->s3_bucket,
 					   sizeof(locationConstraint),
 					   locationConstraint, NULL, &responseHandler, 0);
 
-		elog(INFO, "s3_test_bucket: %s. status %d", s3config.s3_bucketname, statusG);
+		elog(INFO, "s3_test_bucket: %s. status %d", s3_params->s3_bucket, statusG);
 	} while (S3_status_is_retryable(statusG) && should_retry());
 
 	result = statusG == S3StatusOK ? 1 : 0;
@@ -88,7 +88,7 @@ s3_test_bucket(s3Config s3config)
 	if (!result)
 		printError();
 	else
-		elog(INFO, "s3_test_bucket succeed %s", s3config.s3_bucketname);
+		elog(INFO, "s3_test_bucket succeed %s", s3_params->s3_bucket);
 
 	return result;
 }
@@ -105,7 +105,7 @@ typedef struct put_object_callback_data
 
 
 void
-s3_put_object(s3Config s3config, pgFile *file)
+s3_put_object(S3Params S3Params, pgFile *file)
 {
 	S3NameValue metaProperties[S3_MAX_METADATA_COUNT];
 	put_object_callback_data data;
@@ -114,11 +114,11 @@ s3_put_object(s3Config s3config, pgFile *file)
 	S3BucketContext bucketContext =
 	{
 		0,
-		s3config.s3_bucketname,
+		s3_params->s3_bucket,
 		protocolG,
-		s3config.s3_force_path_style?S3UriStylePath:S3UriStyleVirtualHost,
-		s3config.s3_access_key_id,
-		s3config.s3_secret_access_key,
+		s3_params->s3_force_path_style?S3UriStylePath:S3UriStyleVirtualHost,
+		s3_params->s3_access_key_id,
+		s3_params->s3_secret_access_key,
 	};
 
 	S3PutProperties putProperties =
@@ -202,18 +202,18 @@ s3_put_object(s3Config s3config, pgFile *file)
 // get object
 
 // bool
-// s3_get_object(s3Config s3config, pgFile *file)
+// s3_get_object(S3Params S3Params, pgFile *file)
 // {
 //     FILE *outfile = 0;
 
 // 		S3BucketContext bucketContext =
 // 	{
 // 		0,
-// 		s3config.s3_bucketname,
+// 		s3_params->s3_bucket,
 // 		protocolG,
-// 		s3config.s3_force_path_style?S3UriStylePath:S3UriStyleVirtualHost,
-// 		s3config.s3_access_key_id,
-// 		s3config.s3_secret_access_key,
+// 		s3_params->s3_force_path_style?S3UriStylePath:S3UriStyleVirtualHost,
+// 		s3_params->s3_access_key_id,
+// 		s3_params->s3_secret_access_key,
 // 	};
 
 
@@ -260,7 +260,7 @@ s3_put_object(s3Config s3config, pgFile *file)
 // 						 tmp_filepath+strlen("XXXXXX/database/"));
 
 // 		elog(INFO, "do get_object file %s from %s/%s backup_path %s",
-// 			file->name, s3config.s3_bucketname, s3_filepath, backup_instance_path);
+// 			file->name, s3_params->s3_bucket, s3_filepath, backup_instance_path);
 
 // 		S3_get_object(&bucketContext, s3_filepath, &getConditions, 0,
 //                       0,0, &getObjectHandler, outfile);

@@ -1260,4 +1260,13 @@ extern void start_WAL_streaming(PGconn *backup_conn, char *stream_dst_path,
 							   ConnectionOptions *conn_opt,
 							   XLogRecPtr startpos, TimeLineID starttli);
 extern int wait_WAL_streaming_end(parray *backup_files_list);
+
+
+/* in utils/s3.c */
+extern void s3_initialize(S3Params s3_params);
+extern void s3_deinitialize(bool fatal, void *userdata);
+extern int s3_test_bucket(S3Params s3_params);
+extern void s3_put_object(S3Params s3_params, pgFile *file);
+extern bool s3_get_object(S3Params s3_params, pgFile *file);
+
 #endif /* PG_PROBACKUP_H */
