@@ -3,7 +3,7 @@
 #
 # Copyright (c) 2019-2020, Postgres Professional
 #
-
+set -xe
 
 PG_SRC=$PWD/postgres
 
@@ -55,26 +55,39 @@ pg_config
 
 # Build and install pg_probackup (using PG_CPPFLAGS and SHLIB_LINK for gcov)
 echo "############### Compiling and installing pg_probackup:"
-# make USE_PGXS=1 PG_CPPFLAGS="-coverage" SHLIB_LINK="-coverage" top_srcdir=$CUSTOM_PG_SRC install
+make USE_PGXS=1 PG_CFLAGS="-coverage" SHLIB_LINK="-coverage" top_srcdir=$PG_SRC
 make USE_PGXS=1 top_srcdir=$PG_SRC install
 
 # Setup python environment
 echo "############### Setting up python env:"
 python2 -m virtualenv pyenv
 source pyenv/bin/activate
-pip install testgres==1.8.2
+pip install testgres
 
 echo "############### Testing:"
-if [ "$MODE" = "basic" ]; then
+if   [ "$MODE" = "basic" ]; then
     export PG_PROBACKUP_TEST_BASIC=ON
     python -m unittest -v tests
     python -m unittest -v tests.init
+elif [ "$MODE" = "remote" ]; then
+
+    cat /dev/zero | ssh-keygen -q -N ""
+    sudo apt-get install openssh-server -y
+    sudo mkdir /run/sshd
+    sudo /usr/sbin/sshd -D &
+    cat /home/postgres/.ssh/id_rsa.pub > /home/postgres/.ssh/authorized_keys
+    ssh-keyscan localhost >> ~/.ssh/known_hosts
+    ssh-keyscan 127.0.0.1 >> ~/.ssh/known_hosts
+
+    export PG_PROBACKUP_TEST_BASIC=ON
+    export PGPROBACKUP_SSH_REMOTE=ON
+    python -m unittest -v tests
 else
     python -m unittest -v tests.$MODE
 fi
 
 # Generate *.gcov files
-# gcov src/*.c src/*.h
+gcov src/*.c src/*.h
 
 # Send coverage stats to Codecov
-# bash <(curl -s https://codecov.io/bash)
+bash <(curl -s https://codecov.io/bash) -t fb9cf24e-be3d-48ef-9e98-2861a1406209
